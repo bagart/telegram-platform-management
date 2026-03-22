@@ -1,6 +1,6 @@
 # BAGArt/TelegramBotManagement
 
-Менеджер ботов: хранение токенов в БД, миграции, команды для управления ботами.
+Bot manager: storing tokens in the database, migrations, commands for managing bots.
 
 ---
 

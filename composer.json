@@ -1,14 +1,31 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "bagart/telegram-bot-management-lib",
-    "type": "library",
     "description": "Telegram Bot management library",
-    "keywords": ["telegram", "bot", "management"],
+    "type": "library",
     "license": "MIT",
+    "keywords": [
+        "telegram",
+        "platform-management",
+        "tg-bot",
+        "tg-api",
+        "telegram-bot",
+        "telegram-api",
+        "bot-platform",
+        "ASK",
+        "async",
+        "pipeline",
+        "client",
+        "execution-engine",
+        "fiber",
+        "transport",
+        "runtime",
+        "future"
+    ],
     "authors": [
         {
-            "name": "BAGArt",
-            "email": "baltaev.artur+lib@gmail.com"
+            "name": "BAGArt (Artur Baltaev)",
+            "email": "baltaev.artur+ask@gmail.com"
         }
     ],
     "require": {
@@ -19,5 +36,13 @@
         "psr-4": {
             "BAGArt\\TelegramBotManagement\\": "src/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "BAGArt\\TelegramBotManagement\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "echo 'No tests yet for telegram-bot-management-lib'"
     }
 }

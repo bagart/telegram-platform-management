@@ -17,7 +17,7 @@ class TgBotManagerInit extends Command
     use TokenResolverTrait;
 
     protected $signature = 'tgbm:init
-                            {token?     : Telegram Bot token}
+                            {--token=     : Telegram Bot token}
                             {--user_id= : Telegram original User ID (optional)}';
 
     protected $description = 'Telegram Bot Manager Setup';

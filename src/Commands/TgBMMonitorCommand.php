@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace BAGArt\TelegramBotManagement\Commands;
 
+use BAGArt\TelegramBot\Configs\TgBotConfig;
 use BAGArt\TelegramBot\Contracts\ApiCommunication\TgBotApiDTOClientContract;
 use BAGArt\TelegramBot\TgApi\Methods\DTO\GetUpdatesMethodDTO;
 use BAGArt\TelegramBot\TgApi\Types\DTO\MessageTypeDTO;
@@ -85,11 +86,11 @@ class TgBMMonitorCommand extends Command
         int $limit,
     ): int {
         $response = $tgDTOClient->request(
-            $token,
+            new TgBotConfig(token: $token),
             new GetUpdatesMethodDTO(
                 offset: $offset,
                 limit: $limit,
-                timeout: 0,
+                timeout: 300,
             ),
         );
 

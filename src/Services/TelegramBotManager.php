@@ -11,9 +11,11 @@ class TelegramBotManager
     public static function addBot(
         string $token,
     ): TgBot {
-        return (new TgBot([
+        $bot = new TgBot([
             'token' => $token,
-        ]))
-            ->save();
+        ]);
+        $bot->save();
+
+        return $bot;
     }
 }
