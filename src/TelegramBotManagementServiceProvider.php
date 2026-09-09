@@ -76,6 +76,7 @@ class TelegramBotManagementServiceProvider extends ServiceProvider
     {
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
+        $this->loadTranslationsFrom(__DIR__.'/../lang', 'management');
 
         if (class_exists(\Laravel\Mcp\Facades\Mcp::class)) {
             \Laravel\Mcp\Facades\Mcp::local('tg-ops', \BAGArt\TelegramBotManagement\Mcp\TgOpsServer::class);

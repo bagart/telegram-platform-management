@@ -8,10 +8,13 @@ use BAGArt\TelegramBotManagement\Models\TgBot;
 use BAGArt\TelegramModuleEngine\Activation\ModuleActivationReader;
 use BAGArt\TelegramModuleEngine\Registry\EngineModuleRegistry;
 use BAGArt\TelegramModuleEngine\Settings\ConfigFileAccessContract;
-use BAGArt\TelegramModuleEngine\Settings\SettingsScreenContribution;
+use BAGArt\TelegramModuleEngine\Settings\SettingsField;
+use BAGArt\TelegramModuleEngine\Settings\WebAccessLevel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Lang;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,6 +24,10 @@ use Inertia\Response;
  * Renders whatever settings screens the engine resolves for a bot.
  * Reads/writes module config files via ConfigFileAccessContract.
  * No per-module controllers; the descriptor drives the form.
+ *
+ * Access levels:
+ *  - BotAdmin: user owns the specific bot (tg_bot_owners)
+ *  - PlatformAdmin: user owns ≥1 bot (platform-wide access)
  */
 class SettingsScreenController
 {
@@ -32,16 +39,23 @@ class SettingsScreenController
 
     /**
      * Screen listing: resolved settings screens for a selected bot,
-     * filtered by module activation.
+     * filtered by module activation and user's bot ownership.
      */
     public function index(Request $request): Response
     {
-        $bots = TgBot::query()->orderBy('bot_id')->get(['bot_id']);
+        $userId = Auth::id();
+        $ownedBotIds = $this->ownedBotIds($userId);
+
+        $bots = TgBot::query()
+            ->whereIn('bot_id', $ownedBotIds)
+            ->orderBy('bot_id')
+            ->get(['bot_id']);
+
         $selectedBotId = $request->query('bot_id', $bots->first()?->bot_id);
 
         $screens = [];
-        if ($selectedBotId !== null) {
-            $screens = $this->resolveScreensForBot($selectedBotId);
+        if ($selectedBotId !== null && in_array($selectedBotId, $ownedBotIds, true)) {
+            $screens = $this->resolveScreensForBot($selectedBotId, $userId);
         }
 
         return Inertia::render('settings/modules/index', [
@@ -54,24 +68,34 @@ class SettingsScreenController
     /**
      * Show a specific settings screen with current values.
      */
-    public function show(string $botId, string $screenId): Response
+    public function show(Request $request, string $botId, string $screenId): Response
     {
-        $screen = $this->findScreen($botId, $screenId);
+        $userId = Auth::id();
+
+        if (! $this->isBotOwnedBy($botId, $userId)) {
+            abort(403, 'You do not own this bot.');
+        }
+
+        $screen = $this->findScreen($botId, $screenId, $userId);
 
         if ($screen === null) {
             abort(404, 'Settings screen not found.');
         }
+
+        $this->authorizeScreen($screen['accessLevel'], $botId, $userId);
 
         $moduleId = $screen['moduleId'];
         $descriptor = $screen['descriptor'];
         $currentValues = $this->configAccess->read($moduleId);
         $mtime = $this->configAccess->mtime($moduleId);
 
-        return Inertia::render('settings/modules/show', [
+        $component = $screen['component'] ?? 'settings/modules/show';
+
+        return Inertia::render($component, [
             'botId' => $botId,
             'moduleId' => $moduleId,
             'screenId' => $screenId,
-            'label' => $screen['label'],
+            'label' => $this->resolveI18nKey($screen['labelKey']),
             'fields' => $this->serializeFields($descriptor->fields),
             'values' => $this->filterValuesForFields($currentValues, $descriptor->fields),
             'mtime' => $mtime,
@@ -83,18 +107,25 @@ class SettingsScreenController
      */
     public function update(Request $request, string $botId, string $screenId): JsonResponse|RedirectResponse
     {
-        $screen = $this->findScreen($botId, $screenId);
+        $userId = Auth::id();
+
+        if (! $this->isBotOwnedBy($botId, $userId)) {
+            abort(403, 'You do not own this bot.');
+        }
+
+        $screen = $this->findScreen($botId, $screenId, $userId);
 
         if ($screen === null) {
             abort(404, 'Settings screen not found.');
         }
+
+        $this->authorizeScreen($screen['accessLevel'], $botId, $userId);
 
         $moduleId = $screen['moduleId'];
         $descriptor = $screen['descriptor'];
 
         $request->validate($this->buildValidationRules($descriptor));
 
-        // Optimistic concurrency: check mtime
         $clientMtime = (int) $request->input('_mtime', 0);
         $serverMtime = $this->configAccess->mtime($moduleId);
 
@@ -121,11 +152,65 @@ class SettingsScreenController
     }
 
     /**
-     * Resolve all settings screens for a bot (active modules only).
+     * Get bot IDs owned by a user.
      *
-     * @return list<array{screenId: string, moduleId: string, label: string, fieldsCount: int}>
+     * @return list<string>
      */
-    private function resolveScreensForBot(string $botId): array
+    private function ownedBotIds(?int $userId): array
+    {
+        if ($userId === null) {
+            return [];
+        }
+
+        return TgBot::query()
+            ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
+            ->pluck('bot_id')
+            ->all();
+    }
+
+    /**
+     * Check if a bot is owned by a user.
+     */
+    private function isBotOwnedBy(string $botId, ?int $userId): bool
+    {
+        if ($userId === null) {
+            return false;
+        }
+
+        return TgBot::query()
+            ->where('bot_id', $botId)
+            ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
+            ->exists();
+    }
+
+    /**
+     * Authorize screen access based on WebAccessLevel.
+     *
+     * PlatformAdmin: user must own ≥1 bot.
+     * BotAdmin: user must own the specific bot (already checked by caller).
+     */
+    private function authorizeScreen(WebAccessLevel $accessLevel, string $botId, ?int $userId): void
+    {
+        if ($accessLevel === WebAccessLevel::PlatformAdmin) {
+            $ownsAnyBot = $userId !== null && TgBot::query()
+                ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
+                ->exists();
+
+            if (! $ownsAnyBot) {
+                abort(403, 'Platform admin access required.');
+            }
+        }
+
+        // BotAdmin is already enforced by the isBotOwnedBy check in callers.
+    }
+
+    /**
+     * Resolve all settings screens for a bot (active modules only),
+     * filtered by access level.
+     *
+     * @return list<array{screenId: string, moduleId: string, label: string, labelKey: string, component: ?string, accessLevel: string, fieldsCount: int}>
+     */
+    private function resolveScreensForBot(string $botId, ?int $userId): array
     {
         $activeModuleIds = $this->activations->activeModuleIds($botId);
         $screens = [];
@@ -137,10 +222,19 @@ class SettingsScreenController
             }
 
             foreach ($definition->settingsScreens as $screen) {
+                $accessLevel = $screen->web?->accessLevel ?? WebAccessLevel::BotAdmin;
+
+                if (! $this->canAccess($accessLevel, $botId, $userId)) {
+                    continue;
+                }
+
                 $screens[] = [
                     'screenId' => $screen->screenId,
                     'moduleId' => $moduleId,
                     'label' => $this->humanizeScreenId($screen->screenId),
+                    'labelKey' => $screen->screenId,
+                    'component' => $screen->web?->component,
+                    'accessLevel' => $accessLevel->value,
                     'fieldsCount' => count($screen->descriptor->fields),
                 ];
             }
@@ -150,11 +244,28 @@ class SettingsScreenController
     }
 
     /**
-     * Find a specific screen for a bot (must be active).
-     *
-     * @return array{screenId: string, moduleId: string, label: string, descriptor: \BAGArt\TelegramModuleEngine\Settings\SettingsDescriptor}|null
+     * Check if a user can access a screen at the given access level.
      */
-    private function findScreen(string $botId, string $screenId): ?array
+    private function canAccess(WebAccessLevel $accessLevel, string $botId, ?int $userId): bool
+    {
+        if ($userId === null) {
+            return false;
+        }
+
+        return match ($accessLevel) {
+            WebAccessLevel::BotAdmin => $this->isBotOwnedBy($botId, $userId),
+            WebAccessLevel::PlatformAdmin => TgBot::query()
+                ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
+                ->exists(),
+        };
+    }
+
+    /**
+     * Find a specific screen for a bot (must be active and user-authorized).
+     *
+     * @return array{screenId: string, moduleId: string, label: string, labelKey: string, component: ?string, accessLevel: WebAccessLevel, descriptor: \BAGArt\TelegramModuleEngine\Settings\SettingsDescriptor}|null
+     */
+    private function findScreen(string $botId, string $screenId, ?int $userId): ?array
     {
         $activeModuleIds = $this->activations->activeModuleIds($botId);
 
@@ -166,10 +277,19 @@ class SettingsScreenController
 
             foreach ($definition->settingsScreens as $screen) {
                 if ($screen->screenId === $screenId) {
+                    $accessLevel = $screen->web?->accessLevel ?? WebAccessLevel::BotAdmin;
+
+                    if (! $this->canAccess($accessLevel, $botId, $userId)) {
+                        continue;
+                    }
+
                     return [
                         'screenId' => $screen->screenId,
                         'moduleId' => $moduleId,
                         'label' => $this->humanizeScreenId($screen->screenId),
+                        'labelKey' => $screen->screenId,
+                        'component' => $screen->web?->component,
+                        'accessLevel' => $accessLevel,
                         'descriptor' => $screen->descriptor,
                     ];
                 }
@@ -180,10 +300,24 @@ class SettingsScreenController
     }
 
     /**
-     * Serialize fields to plain arrays for Inertia props.
+     * Resolve an i18n key to a translated string, falling back to humanized key.
+     */
+    private function resolveI18nKey(?string $key): string
+    {
+        if ($key === null) {
+            return '';
+        }
+
+        $translation = Lang::get("management::settings.{$key}");
+
+        return $translation !== "settings.{$key}" ? $translation : $this->humanizeScreenId($key);
+    }
+
+    /**
+     * Serialize fields to plain arrays for Inertia props, resolving i18n keys.
      *
-     * @param  list<\BAGArt\TelegramModuleEngine\Settings\SettingsField>  $fields
-     * @return list<array{fieldId: string, type: string, default: mixed, label: ?string, description: ?string, min: ?int, max: ?int, options: ?list, required: bool}>
+     * @param  list<SettingsField>  $fields
+     * @return list<array{fieldId: string, type: string, default: mixed, label: string, description: string, min: ?int, max: ?int, options: ?list, required: bool}>
      */
     private function serializeFields(array $fields): array
     {
@@ -192,11 +326,11 @@ class SettingsScreenController
                 'fieldId' => $field->fieldId,
                 'type' => $field->type->value,
                 'default' => $field->default,
-                'label' => $field->labelKey,
-                'description' => $field->descriptionKey,
+                'label' => $this->resolveI18nKey($field->labelKey) ?: $this->humanizeFieldId($field->fieldId),
+                'description' => $this->resolveI18nKey($field->descriptionKey),
                 'min' => $field->min,
                 'max' => $field->max,
-                'options' => $field->options,
+                'options' => $this->resolveOptionLabels($field->options),
                 'required' => $field->required,
             ],
             $fields,
@@ -204,10 +338,39 @@ class SettingsScreenController
     }
 
     /**
+     * Resolve enum option label keys to translated strings.
+     *
+     * @param  list<array{value: string, labelKey: string}>|null  $options
+     * @return list<array{value: string, label: string}>|null
+     */
+    private function resolveOptionLabels(?array $options): ?array
+    {
+        if ($options === null) {
+            return null;
+        }
+
+        return array_map(
+            fn ($opt) => [
+                'value' => $opt['value'],
+                'label' => $this->resolveI18nKey($opt['labelKey']) ?: $opt['value'],
+            ],
+            $options,
+        );
+    }
+
+    /**
+     * Convert a field ID like 'summarizer.model' to 'Summarizer Model'.
+     */
+    private function humanizeFieldId(string $fieldId): string
+    {
+        return ucfirst(str_replace('.', ' ', $fieldId));
+    }
+
+    /**
      * Filter stored values to only include keys that match defined fields.
      *
      * @param  array<string, mixed>  $values
-     * @param  list<\BAGArt\TelegramModuleEngine\Settings\SettingsField>  $fields
+     * @param  list<SettingsField>  $fields
      * @return array<string, mixed>
      */
     private function filterValuesForFields(array $values, array $fields): array
