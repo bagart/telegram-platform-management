@@ -34,8 +34,8 @@ class TelegramBotManagementServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        // Concrete class is the single-writer injection point (CLI commands
-        // type-hint it); contract bindings share this exact instance.
+        // Concrete class is the single-writer injection point for the legacy
+        // enablement table (CLI commands type-hint it); always available.
         $this->app->singleton(
             \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService::class,
             fn ($app): \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService => new \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService(
@@ -45,18 +45,26 @@ class TelegramBotManagementServiceProvider extends ServiceProvider
             ),
         );
 
-        $this->app->singleton(
-            \BAGArt\TelegramBot\Contracts\Modules\ModuleEnablementContract::class,
-            fn ($app): \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService => $app->make(
-                \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService::class
-            ),
-        );
+        // When enablement_driver='engine', the engine provider's
+        // ModuleEnablementContract binding (EngineModuleEnablement over
+        // bot_module_activations) wins — we skip our contract binding here
+        // to avoid the management binding (registered later) overriding it.
+        $driver = $this->app->make('config')->get('tg_modules.enablement_driver', 'legacy');
+        if ($driver !== 'engine') {
+            $this->app->singleton(
+                \BAGArt\TelegramBot\Contracts\Modules\ModuleEnablementContract::class,
+                fn ($app): \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService => $app->make(
+                    \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService::class
+                ),
+            );
+        }
 
-        // Same instance as the enablement service — settings share its caches
+        // Settings always stay in the legacy table (tg_module_enablements)
+        // — the engine table (bot_module_activations) has no settings column.
         $this->app->singleton(
             \BAGArt\TelegramBot\Contracts\Modules\ModuleSettingsContract::class,
             fn ($app): \BAGArt\TelegramBot\Contracts\Modules\ModuleSettingsContract => $app->make(
-                \BAGArt\TelegramBot\Contracts\Modules\ModuleEnablementContract::class
+                \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService::class
             ),
         );
 
