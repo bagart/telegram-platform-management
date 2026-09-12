@@ -9,6 +9,7 @@ use BAGArt\AsyncKernel\Wrappers\ASKLogWrapper;
 use BAGArt\TelegramBot\Contracts\Modules\ModuleEnablementContract;
 use BAGArt\TelegramBot\Contracts\Modules\ModuleSettingsContract;
 use BAGArt\TelegramBot\Modules\TgModuleRegistry;
+use BAGArt\TelegramBotManagement\Events\BotModuleSettingChanged;
 use BAGArt\TelegramBotManagement\Exceptions\StaleWriteException;
 use BAGArt\TelegramBotManagement\Models\TgModuleEnablement;
 use Closure;
@@ -150,6 +151,14 @@ class TgModuleEnablementService implements ModuleEnablementContract, ModuleSetti
         $this->upsert($moduleId, $botId, $chatId, fn (?TgModuleEnablement $row): array => [
             'is_enabled' => $enabled,
         ]);
+
+        event(new BotModuleSettingChanged(
+            moduleId: $moduleId,
+            botId: $botId,
+            chatId: $chatId,
+            isEnabled: $enabled,
+            settings: null,
+        ));
     }
 
     /**
@@ -180,10 +189,26 @@ class TgModuleEnablementService implements ModuleEnablementContract, ModuleSetti
                 'module_settings' => $settings,
             ]);
 
+            event(new BotModuleSettingChanged(
+                moduleId: $moduleId,
+                botId: $botId,
+                chatId: $chatId,
+                isEnabled: null,
+                settings: $settings,
+            ));
+
             return;
         }
 
         $this->casUpdate($moduleId, $botId, $chatId, $settings, $expectedVersion);
+
+        event(new BotModuleSettingChanged(
+            moduleId: $moduleId,
+            botId: $botId,
+            chatId: $chatId,
+            isEnabled: null,
+            settings: $settings,
+        ));
     }
 
     /**
