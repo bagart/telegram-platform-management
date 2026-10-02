@@ -59,13 +59,61 @@ class TelegramBotManagementServiceProvider extends ServiceProvider
             );
         }
 
-        // Settings always stay in the legacy table (tg_module_enablements)
-        // — the engine table (bot_module_activations) has no settings column.
+        // Settings: legacy driver only. Under enablement_driver='engine' the
+        // engine provider binds EngineSettingsAdapter over
+        // bot_module_activations — settings migration is complete and the
+        // legacy table is dropped by 2026_09_20_000002, so this legacy
+        // binding exists for unmigrated dev databases and pinned tests.
+        if ($driver !== 'engine') {
+            $this->app->singleton(
+                \BAGArt\TelegramBot\Contracts\Modules\ModuleSettingsContract::class,
+                fn ($app): \BAGArt\TelegramBot\Contracts\Modules\ModuleSettingsContract => $app->make(
+                    \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService::class
+                ),
+            );
+        }
+
+        // Entity-add verification (ADR-002 SD2): probe against the lib API
+        // client when telegram-bot-lib is present; otherwise fall back to a
+        // stub that fails loudly instead of silently allowing anything.
+        // Tests bind their own fake over this contract.
         $this->app->singleton(
-            \BAGArt\TelegramBot\Contracts\Modules\ModuleSettingsContract::class,
-            fn ($app): \BAGArt\TelegramBot\Contracts\Modules\ModuleSettingsContract => $app->make(
-                \BAGArt\TelegramBotManagement\Services\TgModuleEnablementService::class
-            ),
+            \BAGArt\TelegramBotManagement\Contracts\ChatAdministratorProbeContract::class,
+            function ($app): \BAGArt\TelegramBotManagement\Contracts\ChatAdministratorProbeContract {
+                if (interface_exists(\BAGArt\TelegramBot\Contracts\ApiCommunication\TgBotApiDTOClientContract::class)) {
+                    return new \BAGArt\TelegramBotManagement\Services\HttpChatAdministratorProbe(
+                        api: $app->make(\BAGArt\TelegramBot\Contracts\ApiCommunication\TgBotApiDTOClientContract::class),
+                    );
+                }
+
+                return new class () implements \BAGArt\TelegramBotManagement\Contracts\ChatAdministratorProbeContract {
+                    public function verify(string $botId, int $chatId, int $initiatorTgId): \BAGArt\TelegramBotManagement\DTO\EntityAddVerification
+                    {
+                        throw new \LogicException(
+                            'ChatAdministratorProbeContract requires bagart/telegram-bot-lib (TgBotApiDTOClientContract is not installed).',
+                        );
+                    }
+                };
+            },
+        );
+
+        // Workspace administration (ADR-001): membership lifecycle + T2
+        // grant management over the access module. The audit recorder is
+        // resolved lazily against AuditSinkContract (bound only when the
+        // audit module is installed).
+        $this->app->singleton(
+            \BAGArt\TelegramBotManagement\Services\WorkspaceAuditRecorder::class,
+        );
+        $this->app->singleton(
+            \BAGArt\TelegramBotManagement\Services\WorkspaceAdminService::class,
+        );
+        $this->app->singleton(
+            \BAGArt\TelegramBotManagement\Services\WorkspacePermissionService::class,
+        );
+        // Rights-source resolution for web surfaces (D7/D11): workspace
+        // owner ↔ bot linkage, never tg_bot_owners.
+        $this->app->singleton(
+            \BAGArt\TelegramBotManagement\Services\BotOwnershipResolver::class,
         );
 
         $this->mergeConfigFrom(

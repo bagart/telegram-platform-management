@@ -44,7 +44,7 @@ class DaemonStatus extends Tool
 
         $lastHour = date('YmdH');
         $metrics = $this->stats->getGlobalMetrics($lastHour, $lastHour);
-        $sent = (int)($metrics['sent:global'] ?? $metrics["{$lastHour}:sent:global"] ?? 0);
+        $sent = (int)($metrics["{$lastHour}:sent"] ?? 0);
 
         $assessment = match (true) {
             $sent > 0 => 'likely_up',

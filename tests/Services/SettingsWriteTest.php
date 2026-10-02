@@ -28,6 +28,7 @@ function writerService(): TgModuleEnablementService
 
 beforeEach(function () {
     config(['cache.default' => 'array']);
+    config(['tg_modules.enablement_driver' => 'legacy']);
     app(TgModuleRegistry::class)->add(
         new TgModuleDescriptor(WRITER_MODULE, 'Example', '1.0.0', defaultEnabled: true),
     );
@@ -257,6 +258,112 @@ describe('CLI migrated onto the writer (single-writer rule)', function () {
 
         expect(TgModuleEnablement::query()->where('bot_id', 'bot1')->where('chat_id', 100)->sole()->is_enabled)
             ->toBeTrue();
+    });
+});
+
+describe('ModuleSettingsContract write/enumeration surface (legacy driver)', function () {
+    it('merges a patch into the raw scope map and removes keys passed as null', function () {
+        TgBot::create(['bot_id' => 'bot1', 'token' => 't:1']);
+        TgModuleEnablement::factory()->forChat('bot1', 100)->create([
+            'module_id' => WRITER_MODULE,
+            'module_settings' => ['keep' => 1, 'stale' => 2],
+        ]);
+
+        $svc = writerService();
+        $svc->patchSettings(WRITER_MODULE, 'bot1', 100, ['keep' => 9, 'fresh' => 3, 'stale' => null]);
+
+        expect($svc->settingsWithMeta(WRITER_MODULE, 'bot1', 100)['values'])
+            ->toBe(['keep' => 9, 'fresh' => 3])
+            ->and(TgModuleEnablement::query()->count())->toBe(1);
+    });
+
+    it('creates the scope row on a patch into a scope with no row yet', function () {
+        TgBot::create(['bot_id' => 'bot1', 'token' => 't:1']);
+
+        writerService()->patchSettings(WRITER_MODULE, 'bot1', null, ['first' => true]);
+
+        expect(TgModuleEnablement::query()->where('bot_id', 'bot1')->whereNull('chat_id')->sole()->module_settings)
+            ->toBe(['first' => true]);
+    });
+
+    it('routes the reserved enabled key to chat-scope enablement instead of settings', function () {
+        TgBot::create(['bot_id' => 'bot1', 'token' => 't:1']);
+
+        $svc = writerService();
+        $svc->patchSettings(WRITER_MODULE, 'bot1', 100, ['enabled' => false, 'strictness' => 2]);
+
+        $chatRow = TgModuleEnablement::query()->where('bot_id', 'bot1')->where('chat_id', 100)->sole();
+        expect($chatRow->is_enabled)->toBeFalse()
+            ->and($chatRow->module_settings)->toBe(['strictness' => 2])
+            ->and(TgModuleEnablement::query()->whereNull('chat_id')->count())->toBe(0);
+
+        $svc->patchSettings(WRITER_MODULE, 'bot1', 100, ['enabled' => true]);
+        expect(TgModuleEnablement::query()->where('chat_id', 100)->sole()->is_enabled)->toBeTrue();
+    });
+
+    it('routes the reserved enabled key to bot-scope enablement when chatId is null', function () {
+        TgBot::create(['bot_id' => 'bot1', 'token' => 't:1']);
+
+        $svc = writerService();
+        $svc->patchSettings(WRITER_MODULE, 'bot1', null, ['enabled' => false]);
+
+        expect(TgModuleEnablement::query()->where('bot_id', 'bot1')->whereNull('chat_id')->sole()->is_enabled)
+            ->toBeFalse()
+            ->and($svc->settingsWithMeta(WRITER_MODULE, 'bot1', null)['values'])->toBe([]);
+    });
+
+    it('enumerates explicit per-scope maps: chat scopes newest first, bot scope last', function () {
+        TgBot::create(['bot_id' => 'bot1', 'token' => 't:1']);
+        TgModuleEnablement::factory()->forChat('bot1', 100)->create([
+            'module_id' => WRITER_MODULE, 'module_settings' => ['from' => 100],
+        ]);
+        TgModuleEnablement::factory()->forChat('bot1', 250)->create([
+            'module_id' => WRITER_MODULE, 'module_settings' => ['from' => 250],
+        ]);
+        TgModuleEnablement::factory()->forBot('bot1')->create([
+            'module_id' => WRITER_MODULE, 'module_settings' => ['scope' => 'bot'],
+        ]);
+        TgModuleEnablement::factory()->forChat('bot1', 999)->create([
+            'module_id' => 'other_module', 'module_settings' => ['ignored' => true],
+        ]);
+
+        $expected = [
+            ['botId' => 'bot1', 'chatId' => 250, 'settings' => ['from' => 250]],
+            ['botId' => 'bot1', 'chatId' => 100, 'settings' => ['from' => 100]],
+            ['botId' => 'bot1', 'chatId' => null, 'settings' => ['scope' => 'bot']],
+        ];
+
+        expect(writerService()->chatsWithSettings(WRITER_MODULE))->toBe($expected)
+            ->and(writerService()->chatsWithSettings(WRITER_MODULE, 'bot1'))->toBe($expected)
+            ->and(writerService()->chatsWithSettings(WRITER_MODULE, 'other_bot'))->toBe([]);
+    });
+
+    it('reads the bot scope without chat rows and lets a chat override win', function () {
+        TgBot::create(['bot_id' => 'bot1', 'token' => 't:1']);
+        TgModuleEnablement::factory()->platform()->create([
+            'module_id' => WRITER_MODULE,
+            'module_settings' => ['shared' => 'platform', 'platform_only' => 1],
+        ]);
+        TgModuleEnablement::factory()->forBot('bot1')->create([
+            'module_id' => WRITER_MODULE,
+            'module_settings' => ['shared' => 'bot', 'bot_only' => 2],
+        ]);
+        TgModuleEnablement::factory()->forChat('bot1', 100)->create([
+            'module_id' => WRITER_MODULE,
+            'module_settings' => ['shared' => 'chat', 'chat_only' => 3],
+        ]);
+
+        $svc = writerService();
+
+        expect($svc->settingsFor(WRITER_MODULE, 'bot1'))
+            ->toBe(['shared' => 'bot', 'platform_only' => 1, 'bot_only' => 2])
+            ->and($svc->settingsFor(WRITER_MODULE, 'bot1', 100))
+            ->toBe([
+                'shared' => 'chat',
+                'platform_only' => 1,
+                'bot_only' => 2,
+                'chat_only' => 3,
+            ]);
     });
 });
 

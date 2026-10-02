@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace BAGArt\TelegramBotManagement\Http\Controllers;
 
 use BAGArt\TelegramBotManagement\Models\TgBot;
+use BAGArt\TelegramBotManagement\Services\BotOwnershipResolver;
 use BAGArt\TelegramModuleEngine\Activation\ModuleActivationReader;
 use BAGArt\TelegramModuleEngine\Registry\EngineModuleRegistry;
 use BAGArt\TelegramModuleEngine\Settings\ConfigFileAccessContract;
@@ -25,9 +26,10 @@ use Inertia\Response;
  * Reads/writes module config files via ConfigFileAccessContract.
  * No per-module controllers; the descriptor drives the form.
  *
- * Access levels:
- *  - BotAdmin: user owns the specific bot (tg_bot_owners)
- *  - PlatformAdmin: user owns ≥1 bot (platform-wide access)
+ * Access levels (ownership resolved via BotOwnershipResolver over workspaces;
+ * tg_bot_owners is a legacy fact, never a rights source — D7/D11):
+ *  - BotAdmin: user is a workspace owner of a workspace linking the bot
+ *  - PlatformAdmin: user owns ≥1 bot under the same resolution
  */
 class SettingsScreenController
 {
@@ -35,7 +37,9 @@ class SettingsScreenController
         private readonly EngineModuleRegistry $registry,
         private readonly ModuleActivationReader $activations,
         private readonly ConfigFileAccessContract $configAccess,
-    ) {}
+        private readonly BotOwnershipResolver $ownership,
+    ) {
+    }
 
     /**
      * Screen listing: resolved settings screens for a selected bot,
@@ -152,7 +156,7 @@ class SettingsScreenController
     }
 
     /**
-     * Get bot IDs owned by a user.
+     * Get bot IDs owned by a user (workspace-owner resolution).
      *
      * @return list<string>
      */
@@ -162,14 +166,11 @@ class SettingsScreenController
             return [];
         }
 
-        return TgBot::query()
-            ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
-            ->pluck('bot_id')
-            ->all();
+        return $this->ownership->ownedBotIds($userId);
     }
 
     /**
-     * Check if a bot is owned by a user.
+     * Check if a bot is owned by a user (workspace-owner resolution).
      */
     private function isBotOwnedBy(string $botId, ?int $userId): bool
     {
@@ -177,24 +178,19 @@ class SettingsScreenController
             return false;
         }
 
-        return TgBot::query()
-            ->where('bot_id', $botId)
-            ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
-            ->exists();
+        return $this->ownership->isOwner($userId, $botId);
     }
 
     /**
      * Authorize screen access based on WebAccessLevel.
      *
-     * PlatformAdmin: user must own ≥1 bot.
+     * PlatformAdmin: user must own ≥1 bot (same resolution as BotAdmin).
      * BotAdmin: user must own the specific bot (already checked by caller).
      */
     private function authorizeScreen(WebAccessLevel $accessLevel, string $botId, ?int $userId): void
     {
         if ($accessLevel === WebAccessLevel::PlatformAdmin) {
-            $ownsAnyBot = $userId !== null && TgBot::query()
-                ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
-                ->exists();
+            $ownsAnyBot = $userId !== null && $this->ownership->ownedBotIds($userId) !== [];
 
             if (! $ownsAnyBot) {
                 abort(403, 'Platform admin access required.');
@@ -254,9 +250,7 @@ class SettingsScreenController
 
         return match ($accessLevel) {
             WebAccessLevel::BotAdmin => $this->isBotOwnedBy($botId, $userId),
-            WebAccessLevel::PlatformAdmin => TgBot::query()
-                ->whereHas('owners', fn ($q) => $q->where('user_id', $userId))
-                ->exists(),
+            WebAccessLevel::PlatformAdmin => $this->ownership->ownedBotIds($userId) !== [],
         };
     }
 

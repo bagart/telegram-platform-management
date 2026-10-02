@@ -58,6 +58,11 @@ return [
         |
         | Deep DNS configuration, applied across all transports.
         |
+        | NOTE: This config takes precedence over ASK_DNS_* env vars.
+        | When this config is loaded (via Laravel), AskDnsConfigFactory::fromLaravelConfig()
+        | is used. The ASK_DNS_* env fallback in AskDnsConfigFactory::fromEnv() only applies
+        | in standalone CLI mode (outside Laravel). See AskDnsConfigFactory.php for details.
+        |
         | `adapter` selects a resolver engine registered in AskDnsRegistry:
         |   - 'ask-dns'    hand-rolled async UDP/TCP resolver (default engine)
         |   - 'react-dns'  react/dns-based resolver (requires react/dns)

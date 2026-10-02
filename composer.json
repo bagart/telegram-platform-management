@@ -44,7 +44,9 @@
         }
     },
     "scripts": {
-        "test": "composer exec pest"
+        "test": [
+            "sh -c 'if [ -x ../../../vendor/bin/pest ]; then cd ../../.. && vendor/bin/pest --testsuite TelegramBotManagement; else echo \"skip: unit suite is host-launched (artisan test / root phpunit.xml)\"; fi'"
+        ]
     },
     "repositories": {
         "telegram-bot-lib": {

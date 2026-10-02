@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace BAGArt\TelegramBotManagement\Commands;
 
 use BAGArt\TelegramBot\Modules\TgModuleRegistry;
-use BAGArt\TelegramBotManagement\Models\TgModuleEnablement;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Diagnoses module configuration:
@@ -26,21 +27,12 @@ class TgModulesDoctorCommand extends Command
     {
         $problems = [];
 
-        $orphans = TgModuleEnablement::query()
-            ->whereNotIn('module_id', $registry->moduleIds())
-            ->orderBy('module_id')
-            ->get(['module_id', 'bot_id', 'chat_id', 'is_enabled']);
+        $orphans = $this->orphanEnablements($registry);
 
-        if ($orphans->isNotEmpty()) {
+        if ($orphans !== []) {
             $this->table(
                 ['module_id', 'level', 'bot_id', 'chat_id', 'is_enabled'],
-                $orphans->map(fn (TgModuleEnablement $row): array => [
-                    $row->module_id,
-                    $row->bot_id === null ? 'platform' : ($row->chat_id === null ? 'bot' : 'chat'),
-                    $row->bot_id ?? '-',
-                    $row->chat_id ?? '-',
-                    $row->is_enabled ? 'yes' : 'no',
-                ])->all(),
+                $orphans,
             );
             $problems[] = 'Enablement rows reference undiscovered modules (typo in module_id, or module removed).';
         }
@@ -62,6 +54,64 @@ class TgModulesDoctorCommand extends Command
         }
 
         return self::FAILURE;
+    }
+
+    /**
+     * Enablement rows whose module_id is not discovered, gathered from both
+     * storages the platform may run on: the legacy `tg_module_enablements`
+     * table (unmigrated dev databases, test fixtures) and the engine
+     * `bot_module_activations` table the `engine` driver reads. Engine rows
+     * are bot-scoped only — chat overrides live inside their settings JSON —
+     * and a database holding the same orphan in both storages reports once.
+     *
+     * @return list<array{string, string, string, string, string}>
+     */
+    private function orphanEnablements(TgModuleRegistry $registry): array
+    {
+        $moduleIds = $registry->moduleIds();
+        $rows = [];
+
+        if (Schema::hasTable('tg_module_enablements')) {
+            foreach (DB::table('tg_module_enablements')
+                ->whereNotIn('module_id', $moduleIds)
+                ->orderBy('module_id')
+                ->get(['module_id', 'bot_id', 'chat_id', 'is_enabled']) as $row) {
+                $botId = $row->bot_id === null ? '-' : (string) $row->bot_id;
+                $chatId = $row->chat_id === null ? '-' : (string) $row->chat_id;
+
+                $rows[$this->orphanKey($row->module_id, $botId, $chatId)] = [
+                    (string) $row->module_id,
+                    $row->bot_id === null ? 'platform' : ($row->chat_id === null ? 'bot' : 'chat'),
+                    $botId,
+                    $chatId,
+                    $row->is_enabled ? 'yes' : 'no',
+                ];
+            }
+        }
+
+        if (Schema::hasTable('bot_module_activations')) {
+            foreach (DB::table('bot_module_activations')
+                ->whereNotIn('module_id', $moduleIds)
+                ->orderBy('module_id')
+                ->get(['module_id', 'bot_id', 'status']) as $row) {
+                $botId = (string) $row->bot_id;
+
+                $rows[$this->orphanKey($row->module_id, $botId, '-')] = [
+                    (string) $row->module_id,
+                    'bot',
+                    $botId,
+                    '-',
+                    $row->status === 'enabled' ? 'yes' : 'no',
+                ];
+            }
+        }
+
+        return array_values($rows);
+    }
+
+    private function orphanKey(string $moduleId, string $botId, string $chatId): string
+    {
+        return $moduleId."\x1f".$botId."\x1f".$chatId;
     }
 
     /**

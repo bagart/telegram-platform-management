@@ -9,9 +9,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Pivot row of the tg_bots ↔ owners membership (unique per bot_id + user_id,
- * see the create_tg_bot_owners_table migration). Visibility of bots on the
- * web side is derived from this table.
+ * Pivot row of the tg_bots ↔ owners table (unique per bot_id + user_id,
+ * see the create_tg_bot_owners_table migration).
+ *
+ * D7/D11 (ADR-001/ADR-003): user_id is the canonical platform users.id —
+ * the sole interpretation. This table is a legacy ownership FACT only:
+ * it is NOT a rights source, no production code writes it, and its rows are
+ * disposable (no backfill). Rights and web visibility resolve over
+ * workspaces through Services\BotOwnershipResolver. The model and relation
+ * are kept because other packages still read them.
  */
 class TgBotOwner extends Model
 {

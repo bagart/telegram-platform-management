@@ -11,8 +11,11 @@ class TelegramBotManager
 {
     public static function addBot(
         string $token,
+        ?string $actorId = null,
+        ?string $actorType = null,
     ): TgBot {
         $bot = new TgBot([
+            'bot_id' => strstr($token, ':', true),
             'token' => $token,
         ]);
         $bot->save();
@@ -20,6 +23,8 @@ class TelegramBotManager
         event(new BotCreated(
             botId: $bot->bot_id,
             secretToken: $bot->secret_token ?? '',
+            actorId: $actorId,
+            actorType: $actorType,
         ));
 
         return $bot;

@@ -9,11 +9,14 @@ use Illuminate\Foundation\Events\Dispatchable;
 /**
  * Fired when a bot's secret token is rotated.
  */
-final class BotTokenRotated
+final readonly class BotTokenRotated
 {
     use Dispatchable;
 
     public function __construct(
         public readonly string $botId,
-    ) {}
+        public readonly ?string $actorId = null,
+        public readonly ?string $actorType = null,
+    ) {
+    }
 }

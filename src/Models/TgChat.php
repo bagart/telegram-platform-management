@@ -35,6 +35,14 @@ class TgChat extends Model
 
     public $incrementing = false;
 
+    protected $attributes = [
+        'is_active' => true,
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
     protected $fillable = [
         'bot_id',
         'chat_id',

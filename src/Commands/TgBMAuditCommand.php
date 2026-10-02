@@ -43,7 +43,10 @@ class TgBMAuditCommand extends Command
         $defaultPath = 'misc/BAGArt/telegram-bot-lib/src/Outbound';
 
         if ($this->option('path')) {
-            $base = base_path((string)$this->option('path'));
+            $optionPath = (string) $this->option('path');
+            $base = str_starts_with($optionPath, '/') || preg_match('/^[A-Za-z]:[\\\\\\/]/', $optionPath) === 1
+                ? $optionPath
+                : base_path($optionPath);
         } elseif ($this->option('all')) {
             $base = base_path('misc/BAGArt');
         } else {
@@ -288,6 +291,6 @@ class TgBMAuditCommand extends Command
         }
 
         $this->comment('Heuristic checks — review each finding. Some may be false positives.');
-        $this->comment('See .agents/skills/highload-stability/rules/checklist.md for the full rules.');
+        $this->comment('See docs/skills/highload-stability/rules/checklist.md for the full rules.');
     }
 }

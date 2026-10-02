@@ -169,6 +169,48 @@ describe('DaemonStatus', function () {
             ->and($payload)->toHaveKey('caveat')
             ->and($payload['caveat'])->toContain('Indirect');
     });
+
+    it('reports likely_down when queue has items but no sent metrics', function () {
+        $queue = new InMemoryOutboundQueue(new BAGArt\AsyncKernel\ASKClock());
+        $clock = new BAGArt\AsyncKernel\ASKClock();
+        $task = new OutboundTask(
+            id: bin2hex(random_bytes(16)),
+            botConfig: new \BAGArt\TelegramBot\Configs\TgBotConfig(token: '123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef', botId: '123456'),
+            dtoClass: \BAGArt\TelegramBot\TgApi\Methods\DTO\SendMessageMethodDTO::class,
+            dtoData: ['chat_id' => 1, 'text' => 'test'],
+        );
+        $queue->push($task);
+
+        $stats = new TgOutboundStats(makeInMemoryStatsCache());
+        $tool = new DaemonStatus($queue, $stats);
+
+        $response = $tool->handle(new Request([]));
+
+        expect($response->isError())->toBeFalse();
+        $payload = json_decode((string) $response->content(), true);
+        expect($payload['assessment'])->toBe('likely_down')
+            ->and($payload['queue_size'])->toBeGreaterThan(0)
+            ->and($payload['last_hour_sent'])->toBe(0);
+    });
+
+    it('reports likely_up when sent metrics are non-zero', function () {
+        $cache = makeInMemoryStatsCache();
+        $queue = new InMemoryOutboundQueue(new BAGArt\AsyncKernel\ASKClock());
+        $stats = new TgOutboundStats($cache);
+
+        $hour = date('YmdH');
+        $cache->put("tg_outbound:stats:{$hour}:sent:global", 5, 3600);
+
+        $tool = new DaemonStatus($queue, $stats);
+
+        $response = $tool->handle(new Request([]));
+
+        expect($response->isError())->toBeFalse();
+        $payload = json_decode((string) $response->content(), true);
+        expect($payload['assessment'])->toBe('likely_up')
+            ->and($payload['last_hour_sent'])->toBe(5)
+            ->and($payload['queue_size'])->toBe(0);
+    });
 });
 
 describe('BotList', function () {
