@@ -4,7 +4,7 @@
 
 | Need | File |
 |---|---|
-| Models/webhooks/CLI/MCP | `SDD-management.md` |
-| Skill (deep rules) | `.agents/skills/multi-bot-management/` |
+| Models/webhooks/CLI/MCP, identity, workspaces, entities, bot catalog | `sdd/management.md` |
+| Skill (deep rules) | `docs/skills/multi-bot-management/` |
 
-## Source map: `Models/` (TgBot, TgBotOwner, TgModuleEnablement), `Http/` (TgWebhookController + middlewares), `Commands/` (tgbm:*), `Mcp/` (tg-ops server), `Services/`, `Registries/`, `Events/`.
+## Source map: `Models/` (TgBot, TgBotOwner, TgEntity, Workspace*, TgChat, TgModuleEnablement), `Http/` (TgWebhookController + middlewares), `Commands/` (tgbm:*), `Mcp/` (tg-ops server), `Services/` (identity, entities, bot catalog, workspaces, ownership resolver), `Registries/`, `Events/`.
