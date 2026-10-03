@@ -11,8 +11,10 @@ uses(RefreshDatabase::class);
 
 describe('TgDbTokenResolver', function () {
     it('implements BotTokenResolverContract', function () {
-        expect(TgDbTokenResolver::class)
-            ->toImplement(BotTokenResolverContract::class);
+        // class_implements instead of arch toImplement: vendor-mode CI
+        // cannot evaluate toImplement on platform classes.
+        expect(class_implements(TgDbTokenResolver::class))
+            ->toContain(BotTokenResolverContract::class);
     });
 
     it('is a readonly class', function () {

@@ -13,8 +13,10 @@ uses(RefreshDatabase::class);
 
 describe('TgBotDbRegistry', function () {
     it('implements TgBotRegistryContract', function () {
-        expect(TgBotDbRegistry::class)
-            ->toImplement(TgBotRegistryContract::class);
+        // class_implements instead of arch toImplement: vendor-mode CI
+        // cannot evaluate toImplement on platform classes.
+        expect(class_implements(TgBotDbRegistry::class))
+            ->toContain(TgBotRegistryContract::class);
     });
 
     it('register() throws TgTechnicalWithEntityException', function () {
