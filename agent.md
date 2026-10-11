@@ -81,7 +81,7 @@ Registered as singleton for `BotTokenResolverContract` in `TelegramBotServicePro
 
 Implements `TgBotRegistryContract`. Read-only bot registry backed by the DB.
 
-- `register()` — always throws. Bots must be registered via `TelegramBotManager::addBot()`.
+- `register()` — always throws. Bots must be registered via `tgbm:init`, which calls `TelegramBotManager::addBot()` (persists the `TgBot` row and dispatches `BotCreated`).
 - `getBot(botId)` — returns `BotSecretDTO` or null.
 - `getBotsBySecret(secret)` — generator of `BotSecretDTO`.
 - `getBotIdsBySecret(secret)` — generator of bot_id strings.

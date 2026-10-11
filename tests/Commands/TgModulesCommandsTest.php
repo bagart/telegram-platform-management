@@ -6,6 +6,7 @@ use BAGArt\TelegramBot\Modules\TgModuleDescriptor;
 use BAGArt\TelegramBot\Modules\TgModuleRegistry;
 use BAGArt\TelegramBotManagement\Models\TgModuleEnablement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
@@ -45,6 +46,37 @@ describe('TgModulesListCommand', function () {
 
         $this->artisan('tg:modules:list')
             ->assertOk();
+    });
+
+    it('emits structured json with the documented shape', function () {
+        $exitCode = Artisan::call('tg:modules:list', ['--format' => 'json']);
+        $payload = json_decode(Artisan::output(), true);
+
+        expect($exitCode)->toBe(0)
+            ->and(json_last_error())->toBe(JSON_ERROR_NONE)
+            ->and($payload)->toBeArray()
+            ->and($payload)->not->toBeEmpty();
+
+        foreach ($payload as $row) {
+            expect($row)->toHaveKeys([
+                'id',
+                'name',
+                'version',
+                'capabilities',
+                'defaultEnabled',
+                'requiresModules',
+                'conflictsWith',
+            ]);
+        }
+    });
+
+    it('accepts --json as a shorthand for --format=json', function () {
+        $exitCode = Artisan::call('tg:modules:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), true);
+
+        expect($exitCode)->toBe(0)
+            ->and(json_last_error())->toBe(JSON_ERROR_NONE)
+            ->and($payload)->toBeArray();
     });
 });
 

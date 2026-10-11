@@ -16,7 +16,7 @@ src/
 │   ├── TgDbTokenResolver.php     — BotTokenResolverContract (readonly, final)
 │   └── TgModuleEnablement.php    — 3-tier enablement (platform/bot/chat), UUID PK, CAS
 ├── Services/
-│   ├── TelegramBotManager.php    — static addBot() factory, fires BotCreated event
+│   ├── TelegramBotManager.php    — static addBot() factory (called by tgbm:init), fires BotCreated event
 │   └── TgModuleEnablementService.php — guarded writer: 3-tier inheritance, 2-layer cache, CAS
 ├── Registries/
 │   └── TgBotDbRegistry.php       — TgBotRegistryContract (read-only, register() throws)

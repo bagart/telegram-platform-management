@@ -18,7 +18,6 @@ class TelegramBotManagementServiceProvider extends ServiceProvider
         \BAGArt\TelegramBotManagement\Commands\TgOutboundMetricsCommand::class,
         \BAGArt\TelegramBotManagement\Commands\TgOutboundDlqCommand::class,
         \BAGArt\TelegramBotManagement\Commands\TgOutboundToolCommand::class,
-        \BAGArt\TelegramBotManagement\Commands\TgModulesListCommand::class,
         \BAGArt\TelegramBotManagement\Commands\TgModulesDoctorCommand::class,
         \BAGArt\TelegramBotManagement\Commands\TgModuleEnableCommand::class,
         \BAGArt\TelegramBotManagement\Commands\TgModuleDisableCommand::class,

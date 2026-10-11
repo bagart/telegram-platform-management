@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use BAGArt\TelegramBotAudit\Laravel\Listeners\RecordModuleLifecycleEvents;
 use BAGArt\TelegramBotManagement\Events\BotCreated;
+use BAGArt\TelegramBotManagement\Events\BotDeleted;
+use BAGArt\TelegramBotManagement\Events\BotTokenRotated;
 use BAGArt\TelegramBotManagement\Models\TgBot;
 use BAGArt\TelegramBotManagement\Services\TelegramBotManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -61,6 +64,19 @@ describe('TelegramBotManager', function () {
                 return $event->actorId === null
                     && $event->actorType === null;
             });
+        });
+    });
+
+    // Wiring pin (B5): the audit provider's platform listener table must keep
+    // these bindings — listener unit tests only invoke the handlers directly,
+    // so without this assertion a provider edit could silently unbind them.
+    describe('audit listener wiring', function () {
+        it('binds bot lifecycle events to RecordModuleLifecycleEvents', function () {
+            Event::fake();
+
+            Event::assertListening(BotCreated::class, RecordModuleLifecycleEvents::class.'@handleBotCreated');
+            Event::assertListening(BotDeleted::class, RecordModuleLifecycleEvents::class.'@handleBotDeleted');
+            Event::assertListening(BotTokenRotated::class, RecordModuleLifecycleEvents::class.'@handleBotTokenRotated');
         });
     });
 });

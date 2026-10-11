@@ -20,7 +20,7 @@ class TgBotDbRegistry implements TgBotRegistryContract
     {
         throw new TgTechnicalWithEntityException(
             'TgBotDbRegistry::register',
-            'Use TelegramBotManager to register new Bots'
+            'Use tgbm:init (TelegramBotManager::addBot) to register new Bots'
         );
     }
 

@@ -16,12 +16,16 @@ use Illuminate\Support\Facades\Schema;
  * - Q7 static checks: declared dependencies discovered with a satisfied
  *   semver constraint ("module_id" or "module_id@>=1.2.0"), and no pair of
  *   mutually conflicting modules discovered at the same time.
+ *
+ * Scope: enablement-orphan rows and static descriptor consistency. For
+ * registry, activations and routing diagnostics see tg:modules:diagnose
+ * (engine).
  */
 class TgModulesDoctorCommand extends Command
 {
     protected $signature = 'tg:modules:doctor';
 
-    protected $description = 'Check module enablements and static descriptor consistency';
+    protected $description = 'Check module enablements and static descriptor consistency (registry/activations/routing: tg:modules:diagnose)';
 
     public function handle(TgModuleRegistry $registry): int
     {

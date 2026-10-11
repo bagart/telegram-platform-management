@@ -81,3 +81,13 @@ workspace ──< workspace_members >── user  (subject = users.id via users.
     └── access_grants (scope=workspace|chat, workspace_id, capability, effect)
              └── GrantCreated / GrantRevoked ──> AuditSinkContract
 ```
+
+## addBot Dead Path + Audit Listener Reachability (B5, 2026-10-09) — Option A
+
+`TelegramBotManager::addBot()` was a dead path with a live misdirecting error: the only production-adjacent creation path (`TgBotManagerInit`) called bare `TgBot::create` and fired nothing, so the audit package's `BotCreated`/`BotDeleted`/`BotTokenRotated` → `RecordModuleLifecycleEvents` mappings were unreachable in production (`BotCreated` dispatched only from `TelegramBotManager`, itself test-only; `BotDeleted`/`BotTokenRotated` never dispatched anywhere). `TgBotDbRegistry`'s error told operators to "Use TelegramBotManager" — i.e. pointed at the dead path.
+
+- **Option A (wire) chosen:** `tgbm:init` now calls `TelegramBotManager::addBot($token)` (replacing the bare `TgBot::create`; exists-check and `extractBotId()` stay), making `bot.created` audit rows reachable through the existing listener mapping. Zero test deletions; the 3 Bot* entries remain inside W-D3's `PLATFORM_EVENT_LISTENERS` const table.
+- `TgBotDbRegistry` error string made truthful: `'Use tgbm:init (TelegramBotManager::addBot) to register new Bots'` — hard-flipped in `TgBotDbRegistryTest` in the same change; `register()` not refactored so the phpstan baseline `where`×3 + `count`×1 entries stay matched.
+- Wiring-regression blind spot closed: `TelegramBotManagerTest` gained an "audit listener wiring" describe block pinning the 3 Bot* → `RecordModuleLifecycleEvents@handle*` mappings via `Event::assertListening` (first such test in the repo); `TgBotManagerInitTest` asserts `BotCreated` dispatch (botId/secretToken/actor + DB row) and no-dispatch on already-exists.
+- `BotDeleted`/`BotTokenRotated` still have no production dispatch sites — wiring them is a separate scope decision. `BotCatalogService::connectExternal`/`registryOnly` kept as-is (ADR-004 catalog surfaces, 14 tests green; no production caller, wiring/retiring is a product-scope decision, not a blind delete). 4 stale doc references corrected (`flow-architecture.json`, `workflow-visualizer.json`, `agent.md`, `Readme.md`) to describe the real `tgbm:init` → `addBot()` → `BotCreated` chain.
+- `Order: AFTER W-D3` (digest edge over fix-impact's "independent"): both edit `AuditServiceProvider.php` in the same region (W-D3's const table vs B5's listener mapping).

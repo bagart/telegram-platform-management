@@ -23,7 +23,7 @@ describe('TgBotDbRegistry', function () {
         $registry = TgBotDbRegistry::build();
 
         $registry->register(new BotSecretDTO('123456:ABC-DEF'));
-    })->throws(TgTechnicalWithEntityException::class, 'Use TelegramBotManager to register new Bots');
+    })->throws(TgTechnicalWithEntityException::class, 'Use tgbm:init (TelegramBotManager::addBot) to register new Bots');
 
     it('build() returns a TgBotDbRegistry instance', function () {
         expect(TgBotDbRegistry::build())->toBeInstanceOf(TgBotDbRegistry::class);

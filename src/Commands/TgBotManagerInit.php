@@ -6,6 +6,7 @@ namespace BAGArt\TelegramBotManagement\Commands;
 
 use BAGArt\TelegramBotBasic\Commands\Traits\TokenResolverTrait;
 use BAGArt\TelegramBotManagement\Models\TgBot;
+use BAGArt\TelegramBotManagement\Services\TelegramBotManager;
 use Illuminate\Console\Command;
 
 /**
@@ -42,10 +43,7 @@ class TgBotManagerInit extends Command
             return static::SUCCESS;
         }
 
-        $tgBot = TgBot::create([
-            'bot_id' => $botId,
-            'token' => $token,
-        ]);
+        $tgBot = TelegramBotManager::addBot($token);
 
         $this->info("Telegram Bot added: bot_id: {$tgBot->bot_id}; legacy --user_id (no-op): ".($userId ?: 'EMPTY'));
 

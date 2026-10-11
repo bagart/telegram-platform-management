@@ -5,4 +5,4 @@
 
 | Topic | File | Summary |
 |---|---|---|
-| management | [`management.md`](management.md) | Models/webhooks/CLI/MCP, identity, workspaces, entities, bot catalog |
+| management | [`management.md`](management.md) | Models/webhooks/CLI/MCP, identity, workspaces, entities, bot catalog; addBot wiring (B5: `tgbm:init` → `addBot()` → `BotCreated` audit reachable) |
